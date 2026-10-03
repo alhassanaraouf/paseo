@@ -8,6 +8,7 @@ import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
+import type { SidebarFolder } from "@/stores/sidebar-folders-store";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import {
   resolveSidebarProjectIconTargets,
@@ -20,8 +21,22 @@ import {
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
 
+export interface SidebarFolderGroup {
+  folder: SidebarFolder;
+  collapsed: boolean;
+  projects: SidebarProjectEntry[];
+}
+
+export interface SidebarProjectFolderGroups {
+  folderGroups: SidebarFolderGroup[];
+  /** Projects in no folder, rendered after every folder. */
+  rootProjects: SidebarProjectEntry[];
+}
+
 export interface SidebarProjection {
   pinnedGroups: PinnedSidebarGroups;
+  /** Project mode only: `pinnedGroups.unpinnedProjects` split by folder, in render order. */
+  projectFolderGroups: SidebarProjectFolderGroups;
   workspaceGroups: SidebarWorkspaceGroup[];
   /**
    * The project icons this projection needs fetched, keyed by `projectViewKey` — one per project,
@@ -45,6 +60,39 @@ export interface SidebarProjectionInput {
   pinnedCollapsed: boolean;
   collapsedProjectKeys: ReadonlySet<string>;
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
+  folders: readonly SidebarFolder[];
+  folderIdByProjectViewKey: Readonly<Record<string, string>>;
+  collapsedFolderIds: readonly string[];
+}
+
+/**
+ * Every folder renders, even one with nothing visible under it: an empty folder is still the
+ * header you delete it from. A project pointing at a folder that no longer exists is a root project.
+ */
+export function groupSidebarProjectsByFolder(input: {
+  projects: SidebarProjectEntry[];
+  folders: readonly SidebarFolder[];
+  folderIdByProjectViewKey: Readonly<Record<string, string>>;
+  collapsedFolderIds: readonly string[];
+}): SidebarProjectFolderGroups {
+  const collapsed = new Set(input.collapsedFolderIds);
+  const projectsByFolderId = new Map<string, SidebarProjectEntry[]>(
+    input.folders.map((folder) => [folder.id, []]),
+  );
+  const rootProjects: SidebarProjectEntry[] = [];
+  for (const project of input.projects) {
+    const folderId = input.folderIdByProjectViewKey[project.viewKey];
+    const bucket = folderId ? projectsByFolderId.get(folderId) : undefined;
+    (bucket ?? rootProjects).push(project);
+  }
+  return {
+    folderGroups: input.folders.map((folder) => ({
+      folder,
+      collapsed: collapsed.has(folder.id),
+      projects: projectsByFolderId.get(folder.id) ?? [],
+    })),
+    rootProjects,
+  };
 }
 
 export function buildSidebarProjection(input: SidebarProjectionInput): SidebarProjection {
@@ -61,14 +109,29 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   // two cannot disagree and a new grouping mode is a compile error here rather than a silent
   // fall-through to the project rows.
   const workspaceGroups = buildWorkspaceGroups(input, unpinnedWorkspaces);
+  const projectFolderGroups = groupSidebarProjectsByFolder({
+    projects: pinnedGroups.unpinnedProjects,
+    folders: input.folders,
+    folderIdByProjectViewKey: input.folderIdByProjectViewKey,
+    collapsedFolderIds: input.collapsedFolderIds,
+  });
 
   const sections: SidebarShortcutSection[] = [];
   if (!input.pinnedCollapsed) {
     sections.push({ workspaces: pinnedGroups.pinnedChats });
   }
   if (input.groupMode === "project") {
+    // Walk projects in the order they render: each folder's projects, then the root ones.
+    for (const group of projectFolderGroups.folderGroups) {
+      sections.push(
+        ...group.projects.map((project) => ({
+          workspaces: project.workspaces,
+          collapsed: group.collapsed || input.collapsedProjectKeys.has(project.viewKey),
+        })),
+      );
+    }
     sections.push(
-      ...pinnedGroups.unpinnedProjects.map((project) => ({
+      ...projectFolderGroups.rootProjects.map((project) => ({
         workspaces: project.workspaces,
         collapsed: input.collapsedProjectKeys.has(project.viewKey),
       })),
@@ -84,6 +147,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
 
   return {
     pinnedGroups,
+    projectFolderGroups,
     workspaceGroups,
     projectIconTargets: resolveSidebarProjectIconTargets(input.projects),
     shortcutModel: buildSidebarShortcutSections({ sections }),

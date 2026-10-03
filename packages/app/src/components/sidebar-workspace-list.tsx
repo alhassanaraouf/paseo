@@ -97,6 +97,12 @@ import {
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
+import {
+  ProjectFolderMenuTrigger,
+  SidebarFolderHeader,
+  useProjectFolderMenuPages,
+} from "@/components/sidebar/sidebar-folders";
+import type { SidebarProjectFolderGroups } from "@/components/sidebar/sidebar-projection";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import {
@@ -215,6 +221,7 @@ interface SidebarWorkspaceListProps {
   /** What `useProjectIcons` is asked for, straight from the projection. See `SidebarProjection`. */
   projectIconTargets: SidebarProjectIconTarget[];
   pinnedGroups: PinnedSidebarGroups;
+  projectFolderGroups: SidebarProjectFolderGroups;
   projects: SidebarProjectEntry[];
   hasProjectsBeforeFilter: boolean;
   /** Whether a project filter is actually being applied — the resolved list, not the stored one. */
@@ -485,6 +492,7 @@ function ProjectKebabMenu({
   removeProjectStatus: "idle" | "pending" | "success";
 }) {
   const { t } = useTranslation();
+  const folderPages = useProjectFolderMenuPages(projectViewKey);
   return (
     <DropdownMenu compactMode="sheet">
       <DropdownMenuTrigger
@@ -496,7 +504,12 @@ function ProjectKebabMenu({
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
+      <DropdownMenuContent
+        align="end"
+        width={220}
+        pages={folderPages}
+        sheetTitle={t("sidebar.project.actions.menu")}
+      >
         <ProjectMenuItems
           surface="dropdown"
           projectViewKey={projectViewKey}
@@ -585,6 +598,7 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
+      <ProjectFolderMenuTrigger projectViewKey={projectViewKey} />
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -876,6 +890,7 @@ function ProjectHeaderRow({
   const localDaemonServerId = useLocalDaemonServerId();
   const projectPath = resolveSidebarProjectLocalPath(project, localDaemonServerId);
   const settingsTarget = project.hosts[0] ?? null;
+  const folderPages = useProjectFolderMenuPages(project.viewKey);
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!worktreeTarget) {
       return;
@@ -1032,6 +1047,7 @@ function ProjectHeaderRow({
       <ContextMenuContent
         align="start"
         width={220}
+        pages={folderPages}
         testID={`sidebar-project-context-menu-${project.viewKey}`}
       >
         <ProjectMenuItems
@@ -1885,6 +1901,7 @@ export function SidebarWorkspaceList({
   workspaceGroups,
   projectIconTargets,
   pinnedGroups,
+  projectFolderGroups,
   projects,
   hasProjectsBeforeFilter,
   hasActiveProjectFilter,
@@ -1984,6 +2001,7 @@ export function SidebarWorkspaceList({
       <ProjectModeList
         projects={projects}
         pinnedGroups={pinnedGroups}
+        projectFolderGroups={projectFolderGroups}
         workspaceEntriesByKey={workspaceEntriesByKey}
         projectIconByProjectViewKey={projectIconByProjectViewKey}
         collapsedProjectKeys={collapsedProjectKeys}
@@ -2080,6 +2098,7 @@ function SidebarGroupedModeList({
 function ProjectModeList({
   projects,
   pinnedGroups,
+  projectFolderGroups,
   workspaceEntriesByKey,
   projectIconByProjectViewKey,
   collapsedProjectKeys,
@@ -2394,24 +2413,55 @@ function ProjectModeList({
     ],
   );
 
+  const { folderGroups, rootProjects } = projectFolderGroups;
+  // Each folder and the root get their own draggable list, so a drag reorders projects within
+  // one group. Moving a project between groups goes through its menu's `Folder` row.
   const projectBody =
     projects.length === 0 ? (
       <SidebarProjectEmptyState onAddProject={onAddProject} onImportSession={onImportSession} />
     ) : (
-      <DraggableList
-        testID="sidebar-project-list"
-        data={unpinnedProjects}
-        keyExtractor={projectViewKeyExtractor}
-        renderItem={renderProject}
-        onDragEnd={handleProjectDragEnd}
-        extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-        scrollEnabled={false}
-        useDragHandle
-        nestable={platformIsNative}
-        simultaneousGestureRef={parentGestureRef}
-        gestureHostPresented={dragGestureHostActive}
-        containerStyle={styles.projectListContainer}
-      />
+      <>
+        {folderGroups.map((group, index) => (
+          <View key={group.folder.id} testID={`sidebar-folder-${group.folder.id}`}>
+            <SidebarFolderHeader
+              folder={group.folder}
+              collapsed={group.collapsed}
+              canMoveUp={index > 0}
+              canMoveDown={index < folderGroups.length - 1}
+            />
+            {group.collapsed || group.projects.length === 0 ? null : (
+              <DraggableList
+                testID={`sidebar-folder-project-list-${group.folder.id}`}
+                data={group.projects}
+                keyExtractor={projectViewKeyExtractor}
+                renderItem={renderProject}
+                onDragEnd={handleProjectDragEnd}
+                extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+                scrollEnabled={false}
+                useDragHandle
+                nestable={platformIsNative}
+                simultaneousGestureRef={parentGestureRef}
+                gestureHostPresented={dragGestureHostActive}
+                containerStyle={styles.folderProjectListContainer}
+              />
+            )}
+          </View>
+        ))}
+        <DraggableList
+          testID="sidebar-project-list"
+          data={rootProjects}
+          keyExtractor={projectViewKeyExtractor}
+          renderItem={renderProject}
+          onDragEnd={handleProjectDragEnd}
+          extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+          scrollEnabled={false}
+          useDragHandle
+          nestable={platformIsNative}
+          simultaneousGestureRef={parentGestureRef}
+          gestureHostPresented={dragGestureHostActive}
+          containerStyle={styles.projectListContainer}
+        />
+      </>
     );
 
   const content = (
@@ -2505,6 +2555,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectListContainer: {
     width: "100%",
+  },
+  folderProjectListContainer: {
+    width: "100%",
+    paddingLeft: theme.spacing[3],
   },
   pinnedSection: {
     marginBottom: theme.spacing[1],

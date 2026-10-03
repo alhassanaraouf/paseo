@@ -85,6 +85,9 @@ function projectionInput(options?: {
     pinnedCollapsed: options?.pinnedCollapsed ?? false,
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
+    folders: [] as { id: string; name: string }[],
+    folderIdByProjectViewKey: {} as Record<string, string>,
+    collapsedFolderIds: [] as string[],
   };
 }
 
@@ -161,6 +164,41 @@ describe("buildSidebarProjection", () => {
     expect(projection.shortcutModel.shortcutTargets).toEqual([
       { serverId: "srv", workspaceId: "pinned" },
       { serverId: "srv", workspaceId: "unpinned" },
+    ]);
+  });
+
+  it("puts foldered projects first and numbers shortcuts in that order", () => {
+    const projection = buildSidebarProjection({
+      ...twoProjectInput("project"),
+      folders: [
+        { id: "work", name: "Work" },
+        { id: "empty", name: "Empty" },
+      ],
+      folderIdByProjectViewKey: { "other-project": "work", project: "missing-folder" },
+    });
+
+    const { folderGroups, rootProjects } = projection.projectFolderGroups;
+    expect(folderGroups.map((group) => group.folder.id)).toEqual(["work", "empty"]);
+    expect(folderGroups[0]?.projects.map((project) => project.viewKey)).toEqual(["other-project"]);
+    expect(folderGroups[1]?.projects).toEqual([]);
+    expect(rootProjects.map((project) => project.viewKey)).toEqual(["project"]);
+    expect(projection.shortcutModel.shortcutTargets).toEqual([
+      { serverId: "srv", workspaceId: "second" },
+      { serverId: "srv", workspaceId: "first" },
+    ]);
+  });
+
+  it("skips shortcuts for projects inside a collapsed folder", () => {
+    const projection = buildSidebarProjection({
+      ...twoProjectInput("project"),
+      folders: [{ id: "work", name: "Work" }],
+      folderIdByProjectViewKey: { "other-project": "work" },
+      collapsedFolderIds: ["work"],
+    });
+
+    expect(projection.projectFolderGroups.folderGroups[0]?.collapsed).toBe(true);
+    expect(projection.shortcutModel.shortcutTargets).toEqual([
+      { serverId: "srv", workspaceId: "first" },
     ]);
   });
 
