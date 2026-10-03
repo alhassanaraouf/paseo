@@ -21,6 +21,7 @@ import { useChangelog, type ChangelogState } from "./changelog-source";
 import { useRevealedReleases } from "./use-revealed-releases";
 import {
   formatChangelogDate,
+  releasesUpTo,
   type ChangelogRelease,
   type ChangelogSection,
 } from "./parse-changelog";
@@ -126,7 +127,8 @@ function ChangelogBody({ state, shownReleases, onShowMore, onRetry }: ChangelogB
     );
   }
 
-  const visibleReleases = state.releases.slice(0, shownReleases);
+  const releases = releasesUpTo(state.releases, appVersion);
+  const visibleReleases = releases.slice(0, shownReleases);
 
   return (
     <View style={styles.releaseList}>
@@ -137,7 +139,7 @@ function ChangelogBody({ state, shownReleases, onShowMore, onRetry }: ChangelogB
           isCurrent={release.version === appVersion}
         />
       ))}
-      {state.releases.length > visibleReleases.length ? (
+      {releases.length > visibleReleases.length ? (
         <Button
           variant="ghost"
           onPress={onShowMore}
