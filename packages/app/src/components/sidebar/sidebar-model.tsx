@@ -71,8 +71,15 @@ export function SidebarModelProvider({
   const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const pinnedWorkspaceOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
   const folders = useSidebarFoldersStore((state) => state.folders);
-  const folderIdByProjectId = useSidebarFoldersStore((state) => state.folderIdByProjectId);
+  const folderIdByProjectRef = useSidebarFoldersStore((state) => state.folderIdByProjectRef);
   const collapsedFolderIds = useSidebarFoldersStore((state) => state.collapsedFolderIds);
+  const reconcileFolderProjects = useSidebarFoldersStore((state) => state.reconcileProjects);
+  // Every project, before filters: an assignment only ever gains refs here, so a project that is
+  // filtered out or briefly missing loses nothing. Re-runs on store changes settle, since the
+  // reconcile is a no-op once every ref is recorded.
+  useEffect(() => {
+    reconcileFolderProjects(list.projects);
+  }, [folderIdByProjectRef, folders, list.projects, reconcileFolderProjects]);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
   );
@@ -156,12 +163,12 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
       folders,
-      folderIdByProjectId,
+      folderIdByProjectRef,
       collapsedFolderIds,
     }),
     [
       folders,
-      folderIdByProjectId,
+      folderIdByProjectRef,
       collapsedFolderIds,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,

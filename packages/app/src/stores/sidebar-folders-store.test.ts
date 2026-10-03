@@ -4,15 +4,28 @@ import {
   createSidebarFolder,
   deleteSidebarFolder,
   moveSidebarFolder,
+  reconcileSidebarFolderAssignments,
   renameSidebarFolder,
   resolveSidebarProjectFolderId,
   toggleSidebarFolderCollapsed,
+  type SidebarFolderProject,
   type SidebarFoldersState,
 } from "./sidebar-folders-store";
 
+/** `hostRefs` are `serverId:projectId`. */
+function projectOn(viewKey: string, hostRefs: string[]): SidebarFolderProject {
+  return {
+    viewKey,
+    hosts: hostRefs.map((ref) => {
+      const [serverId = "", projectId = ""] = ref.split(":");
+      return { serverId, projectId };
+    }),
+  };
+}
+
 const empty: SidebarFoldersState = {
   folders: [],
-  folderIdByProjectId: {},
+  folderIdByProjectRef: {},
   collapsedFolderIds: [],
 };
 
@@ -38,46 +51,50 @@ describe("sidebar folders", () => {
     expect(renameSidebarFolder(state, "work", " ")).toBe(state);
   });
 
-  it("assigns every host of a project, only to a folder that exists; null moves it to the root", () => {
-    const hosts = [
-      { serverId: "a", projectId: "prj_1" },
-      { serverId: "b", projectId: "prj_2" },
-    ];
-    let state = assignProjectToSidebarFolder(withFolders(), hosts, "work");
-    expect(state.folderIdByProjectId).toEqual({ "a:prj_1": "work", "b:prj_2": "work" });
-    expect(resolveSidebarProjectFolderId(state, hosts)).toBe("work");
-    state = assignProjectToSidebarFolder(state, hosts, "missing");
-    expect(state.folderIdByProjectId).toEqual({});
-    state = assignProjectToSidebarFolder(state, hosts, "personal");
-    state = assignProjectToSidebarFolder(state, hosts, null);
-    expect(state.folderIdByProjectId).toEqual({});
+  it("assigns under every ref of a project, only to a folder that exists; null moves it to the root", () => {
+    const project = projectOn("repo", ["a:prj_1", "b:prj_2"]);
+    let state = assignProjectToSidebarFolder(withFolders(), project, "work");
+    expect(state.folderIdByProjectRef).toEqual({
+      "a:prj_1": "work",
+      "b:prj_2": "work",
+      "view:repo": "work",
+    });
+    expect(resolveSidebarProjectFolderId(state, project)).toBe("work");
+    state = assignProjectToSidebarFolder(state, project, "missing");
+    expect(state.folderIdByProjectRef).toEqual({});
+    state = assignProjectToSidebarFolder(state, project, "personal");
+    state = assignProjectToSidebarFolder(state, project, null);
+    expect(state.folderIdByProjectRef).toEqual({});
   });
 
-  it("finds the folder through any host, so a newly joined host does not move the project", () => {
-    const state = assignProjectToSidebarFolder(
-      withFolders(),
-      [{ serverId: "a", projectId: "prj_1" }],
-      "work",
+  it("keeps the folder when a project joins another host and then leaves the first", () => {
+    let state = assignProjectToSidebarFolder(withFolders(), projectOn("repo", ["a:prj_1"]), "work");
+    state = reconcileSidebarFolderAssignments(state, [projectOn("repo", ["a:prj_1", "b:prj_9"])]);
+    // Host a is gone, and the view key changed with a new remote: only b's ref is left to match.
+    expect(resolveSidebarProjectFolderId(state, projectOn("new-remote", ["b:prj_9"]))).toBe("work");
+  });
+
+  it("keeps the folder when the view key changes and later the host does too", () => {
+    let state = assignProjectToSidebarFolder(withFolders(), projectOn("repo", ["a:prj_1"]), "work");
+    state = reconcileSidebarFolderAssignments(state, [projectOn("new-remote", ["a:prj_1"])]);
+    expect(resolveSidebarProjectFolderId(state, projectOn("new-remote", ["b:prj_9"]))).toBe("work");
+  });
+
+  it("reconcile returns the same state when nothing is missing", () => {
+    const project = projectOn("repo", ["a:prj_1"]);
+    const state = assignProjectToSidebarFolder(withFolders(), project, "work");
+    expect(reconcileSidebarFolderAssignments(state, [project, projectOn("other", ["a:x"])])).toBe(
+      state,
     );
-    expect(
-      resolveSidebarProjectFolderId(state, [
-        { serverId: "b", projectId: "prj_9" },
-        { serverId: "a", projectId: "prj_1" },
-      ]),
-    ).toBe("work");
   });
 
   it("deleting a folder returns its projects to the root", () => {
-    let state = assignProjectToSidebarFolder(
-      withFolders(),
-      [{ serverId: "s", projectId: "a" }],
-      "work",
-    );
-    state = assignProjectToSidebarFolder(state, [{ serverId: "s", projectId: "b" }], "personal");
+    let state = assignProjectToSidebarFolder(withFolders(), projectOn("a", ["s:a"]), "work");
+    state = assignProjectToSidebarFolder(state, projectOn("b", ["s:b"]), "personal");
     state = toggleSidebarFolderCollapsed(state, "work");
     state = deleteSidebarFolder(state, "work");
     expect(state.folders.map((folder) => folder.id)).toEqual(["personal"]);
-    expect(state.folderIdByProjectId).toEqual({ "s:b": "personal" });
+    expect(state.folderIdByProjectRef).toEqual({ "s:b": "personal", "view:b": "personal" });
     expect(state.collapsedFolderIds).toEqual([]);
   });
 

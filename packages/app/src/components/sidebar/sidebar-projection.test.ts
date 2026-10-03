@@ -86,7 +86,7 @@ function projectionInput(options?: {
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
     folders: [] as { id: string; name: string }[],
-    folderIdByProjectId: {} as Record<string, string>,
+    folderIdByProjectRef: {} as Record<string, string>,
     collapsedFolderIds: [] as string[],
   };
 }
@@ -174,7 +174,7 @@ describe("buildSidebarProjection", () => {
         { id: "work", name: "Work" },
         { id: "empty", name: "Empty" },
       ],
-      folderIdByProjectId: { "srv:other-project": "work", "srv:project": "missing-folder" },
+      folderIdByProjectRef: { "srv:other-project": "work", "srv:project": "missing-folder" },
     });
 
     const { folderGroups, rootProjects } = projection.projectFolderGroups;
@@ -196,7 +196,7 @@ describe("buildSidebarProjection", () => {
       ...input,
       projects: [input.projects[0]!, renamed],
       folders: [{ id: "work", name: "Work" }],
-      folderIdByProjectId: { "srv:other-project": "work" },
+      folderIdByProjectRef: { "srv:other-project": "work" },
     });
 
     expect(
@@ -208,7 +208,7 @@ describe("buildSidebarProjection", () => {
     const projection = buildSidebarProjection({
       ...twoProjectInput("project"),
       folders: [{ id: "work", name: "Work" }],
-      folderIdByProjectId: { "srv:other-project": "work" },
+      folderIdByProjectRef: { "srv:other-project": "work" },
       collapsedFolderIds: ["work"],
     });
 

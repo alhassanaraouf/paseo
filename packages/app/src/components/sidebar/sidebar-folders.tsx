@@ -35,14 +35,8 @@ import {
   resolveSidebarProjectFolderId,
   useSidebarFoldersStore,
   type SidebarFolder,
-  type SidebarFolderProjectHosts,
+  type SidebarFolderProject,
 } from "@/stores/sidebar-folders-store";
-
-/** What the project menu needs: `viewKey` for test ids, `hosts` for the folder assignment. */
-interface SidebarFolderProject {
-  viewKey: string;
-  hosts: SidebarFolderProjectHosts;
-}
 import type { Theme } from "@/styles/theme";
 
 const MENU_ICON_SIZE = 14;
@@ -269,7 +263,7 @@ export function ProjectFolderMenuTrigger({
 }): ReactElement {
   const { t } = useTranslation();
   const folderName = useSidebarFoldersStore((state) => {
-    const folderId = resolveSidebarProjectFolderId(state, project.hosts);
+    const folderId = resolveSidebarProjectFolderId(state, project);
     return state.folders.find((folder) => folder.id === folderId)?.name ?? null;
   });
   return (
@@ -287,7 +281,7 @@ function ProjectFolderPickerPage({ project }: { project: SidebarFolderProject })
   const { t } = useTranslation();
   const folders = useSidebarFoldersStore((state) => state.folders);
   const currentFolderId = useSidebarFoldersStore((state) =>
-    resolveSidebarProjectFolderId(state, project.hosts),
+    resolveSidebarProjectFolderId(state, project),
   );
   const assignProject = useSidebarFoldersStore((state) => state.assignProject);
   return (
@@ -296,7 +290,7 @@ function ProjectFolderPickerPage({ project }: { project: SidebarFolderProject })
         label={t("sidebar.folder.none")}
         folderId={null}
         selected={currentFolderId === null}
-        projectHosts={project.hosts}
+        project={project}
         onAssign={assignProject}
       />
       {folders.map((folder) => (
@@ -306,7 +300,7 @@ function ProjectFolderPickerPage({ project }: { project: SidebarFolderProject })
           leading={folderLeading}
           folderId={folder.id}
           selected={currentFolderId === folder.id}
-          projectHosts={project.hosts}
+          project={project}
           onAssign={assignProject}
         />
       ))}
@@ -327,20 +321,17 @@ function FolderOptionRow({
   leading,
   folderId,
   selected,
-  projectHosts,
+  project,
   onAssign,
 }: {
   label: string;
   leading?: ReactElement | null;
   folderId: string | null;
   selected: boolean;
-  projectHosts: SidebarFolderProjectHosts;
-  onAssign: (hosts: SidebarFolderProjectHosts, folderId: string | null) => void;
+  project: SidebarFolderProject;
+  onAssign: (project: SidebarFolderProject, folderId: string | null) => void;
 }): ReactElement {
-  const select = useCallback(
-    () => onAssign(projectHosts, folderId),
-    [folderId, onAssign, projectHosts],
-  );
+  const select = useCallback(() => onAssign(project, folderId), [folderId, onAssign, project]);
   return (
     <MenuItem
       leading={leading}
@@ -361,8 +352,8 @@ function ProjectFolderCreatePage({ project }: { project: SidebarFolderProject })
   const [name, setName] = useState("");
   const submit = useCallback(() => {
     const folderId = createFolder(name);
-    if (folderId) assignProject(project.hosts, folderId);
-  }, [assignProject, createFolder, name, project.hosts]);
+    if (folderId) assignProject(project, folderId);
+  }, [assignProject, createFolder, name, project]);
   const submitFromKeyboard = useCallback(() => {
     if (!normalizeSidebarFolderName(name)) return;
     menu.selectItem(submit, true);
