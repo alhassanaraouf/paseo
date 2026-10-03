@@ -13,19 +13,45 @@ export interface SidebarFolder {
   name: string;
 }
 
+/** A project's per-host identities, as on `SidebarProjectEntry.hosts`. */
+export type SidebarFolderProjectHosts = readonly { serverId: string; projectId: string }[];
+
 export interface SidebarFoldersState {
   /** Render order. */
   folders: SidebarFolder[];
-  /** `SidebarProjectEntry.viewKey` → folder id. A project absent here sits at the root. */
-  folderIdByProjectViewKey: Record<string, string>;
+  /**
+   * `serverId:projectId` → folder id, one entry per host the project lives on. A project with no
+   * entry sits at the root. Keyed by the host-local project id rather than the sidebar's
+   * `viewKey`, which follows `projectKey` and changes when the project's git remote does.
+   */
+  folderIdByProjectId: Record<string, string>;
   collapsedFolderIds: string[];
 }
 
 const SidebarFoldersPersistedStateSchema = z.strictObject({
   folders: z.array(z.strictObject({ id: z.string(), name: z.string() })).optional(),
-  folderIdByProjectViewKey: z.record(z.string(), z.string()).optional(),
+  folderIdByProjectId: z.record(z.string(), z.string()).optional(),
   collapsedFolderIds: z.array(z.string()).optional(),
 });
+
+function projectIdKeys(hosts: SidebarFolderProjectHosts): string[] {
+  return hosts.map((host) => `${host.serverId}:${host.projectId}`);
+}
+
+/** The folder a project sits in: the first of its hosts with an assignment to a live folder. */
+export function resolveSidebarProjectFolderId(
+  state: {
+    folders: readonly SidebarFolder[];
+    folderIdByProjectId: Readonly<Record<string, string>>;
+  },
+  hosts: SidebarFolderProjectHosts,
+): string | null {
+  for (const key of projectIdKeys(hosts)) {
+    const folderId = state.folderIdByProjectId[key];
+    if (folderId && state.folders.some((folder) => folder.id === folderId)) return folderId;
+  }
+  return null;
+}
 
 export function normalizeSidebarFolderName(name: string): string {
   return name.trim();
@@ -62,13 +88,13 @@ export function deleteSidebarFolder(
   state: SidebarFoldersState,
   folderId: string,
 ): SidebarFoldersState {
-  const folderIdByProjectViewKey: Record<string, string> = {};
-  for (const [viewKey, id] of Object.entries(state.folderIdByProjectViewKey)) {
-    if (id !== folderId) folderIdByProjectViewKey[viewKey] = id;
+  const folderIdByProjectId: Record<string, string> = {};
+  for (const [key, id] of Object.entries(state.folderIdByProjectId)) {
+    if (id !== folderId) folderIdByProjectId[key] = id;
   }
   return {
     folders: state.folders.filter((folder) => folder.id !== folderId),
-    folderIdByProjectViewKey,
+    folderIdByProjectId,
     collapsedFolderIds: state.collapsedFolderIds.filter((id) => id !== folderId),
   };
 }
@@ -88,16 +114,19 @@ export function moveSidebarFolder(
 
 export function assignProjectToSidebarFolder(
   state: SidebarFoldersState,
-  projectViewKey: string,
+  hosts: SidebarFolderProjectHosts,
   folderId: string | null,
 ): SidebarFoldersState {
-  const folderIdByProjectViewKey = { ...state.folderIdByProjectViewKey };
-  if (folderId && state.folders.some((folder) => folder.id === folderId)) {
-    folderIdByProjectViewKey[projectViewKey] = folderId;
-  } else {
-    delete folderIdByProjectViewKey[projectViewKey];
+  const assign = folderId && state.folders.some((folder) => folder.id === folderId);
+  const folderIdByProjectId = { ...state.folderIdByProjectId };
+  for (const key of projectIdKeys(hosts)) {
+    if (assign) {
+      folderIdByProjectId[key] = folderId;
+    } else {
+      delete folderIdByProjectId[key];
+    }
   }
-  return { ...state, folderIdByProjectViewKey };
+  return { ...state, folderIdByProjectId };
 }
 
 export function toggleSidebarFolderCollapsed(
@@ -116,7 +145,7 @@ interface SidebarFoldersStore extends SidebarFoldersState {
   renameFolder: (folderId: string, name: string) => void;
   deleteFolder: (folderId: string) => void;
   moveFolder: (folderId: string, offset: -1 | 1) => void;
-  assignProject: (projectViewKey: string, folderId: string | null) => void;
+  assignProject: (hosts: SidebarFolderProjectHosts, folderId: string | null) => void;
   toggleFolderCollapsed: (folderId: string) => void;
 }
 
@@ -124,7 +153,7 @@ export const useSidebarFoldersStore = create<SidebarFoldersStore>()(
   persist(
     (set) => ({
       folders: [],
-      folderIdByProjectViewKey: {},
+      folderIdByProjectId: {},
       collapsedFolderIds: [],
       createFolder: (name) => {
         if (!normalizeSidebarFolderName(name)) return null;
@@ -135,8 +164,8 @@ export const useSidebarFoldersStore = create<SidebarFoldersStore>()(
       renameFolder: (folderId, name) => set((state) => renameSidebarFolder(state, folderId, name)),
       deleteFolder: (folderId) => set((state) => deleteSidebarFolder(state, folderId)),
       moveFolder: (folderId, offset) => set((state) => moveSidebarFolder(state, folderId, offset)),
-      assignProject: (projectViewKey, folderId) =>
-        set((state) => assignProjectToSidebarFolder(state, projectViewKey, folderId)),
+      assignProject: (hosts, folderId) =>
+        set((state) => assignProjectToSidebarFolder(state, hosts, folderId)),
       toggleFolderCollapsed: (folderId) =>
         set((state) => toggleSidebarFolderCollapsed(state, folderId)),
     }),
@@ -145,7 +174,7 @@ export const useSidebarFoldersStore = create<SidebarFoldersStore>()(
       storage: createValidatedPersistStorage(AsyncStorage, SidebarFoldersPersistedStateSchema),
       partialize: (state) => ({
         folders: state.folders,
-        folderIdByProjectViewKey: state.folderIdByProjectViewKey,
+        folderIdByProjectId: state.folderIdByProjectId,
         collapsedFolderIds: state.collapsedFolderIds,
       }),
     },

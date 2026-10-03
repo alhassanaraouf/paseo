@@ -32,9 +32,17 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import {
   normalizeSidebarFolderName,
+  resolveSidebarProjectFolderId,
   useSidebarFoldersStore,
   type SidebarFolder,
+  type SidebarFolderProjectHosts,
 } from "@/stores/sidebar-folders-store";
+
+/** What the project menu needs: `viewKey` for test ids, `hosts` for the folder assignment. */
+interface SidebarFolderProject {
+  viewKey: string;
+  hosts: SidebarFolderProjectHosts;
+}
 import type { Theme } from "@/styles/theme";
 
 const MENU_ICON_SIZE = 14;
@@ -87,6 +95,7 @@ export function SidebarFolderHeader({
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const toggleFolderCollapsed = useSidebarFoldersStore((state) => state.toggleFolderCollapsed);
   const moveFolder = useSidebarFoldersStore((state) => state.moveFolder);
   const deleteFolder = useSidebarFoldersStore((state) => state.deleteFolder);
@@ -99,6 +108,8 @@ export function SidebarFolderHeader({
   const handleDelete = useCallback(() => deleteFolder(folder.id), [deleteFolder, folder.id]);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
+  const handlePressIn = useCallback(() => setIsPressed(true), []);
+  const handlePressOut = useCallback(() => setIsPressed(false), []);
   const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
   const pages = useMemo<MenuPageDefinition[]>(
     () => [
@@ -111,13 +122,9 @@ export function SidebarFolderHeader({
     ],
     [folder, t],
   );
-  const rowStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [
-      styles.row,
-      isHovered && styles.rowHovered,
-      pressed && styles.rowPressed,
-    ],
-    [isHovered],
+  const rowStyle = useMemo(
+    () => [styles.row, isHovered && styles.rowHovered, isPressed && styles.rowPressed],
+    [isHovered, isPressed],
   );
 
   const actionsVisible = isHovered || isNative || isCompact;
@@ -125,74 +132,76 @@ export function SidebarFolderHeader({
   const Chevron = collapsed ? ThemedChevronRight : ThemedChevronDown;
 
   return (
-    <View onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+    // The menu button is a sibling of the press target, not inside it, so pressing the button
+    // never reaches the collapse toggle.
+    <View style={rowStyle} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={accessibilityState}
         onPress={handleToggle}
-        style={rowStyle}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={styles.pressTarget}
         testID={`sidebar-folder-row-${folder.id}`}
       >
-        <View style={styles.left}>
-          <View style={styles.leading}>
-            {isHovered ? (
-              <Chevron size={14} uniProps={mutedMapping} />
-            ) : (
-              <FolderIcon size={16} uniProps={mutedMapping} />
-            )}
-          </View>
-          <Text style={styles.title} numberOfLines={1}>
-            {folder.name}
-          </Text>
+        <View style={styles.leading}>
+          {isHovered ? (
+            <Chevron size={14} uniProps={mutedMapping} />
+          ) : (
+            <FolderIcon size={16} uniProps={mutedMapping} />
+          )}
         </View>
-        <View
-          style={!actionsVisible && styles.hidden}
-          pointerEvents={actionsVisible ? "auto" : "none"}
-        >
-          <DropdownMenu compactMode="sheet">
-            <DropdownMenuTrigger
-              hitSlop={8}
-              style={kebabStyle}
-              accessibilityRole={isWeb ? undefined : "button"}
-              accessibilityLabel={t("sidebar.folder.menu")}
-              testID={`sidebar-folder-kebab-${folder.id}`}
-            >
-              {renderKebabIcon}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" width={220} pages={pages} sheetTitle={folder.name}>
-              <DropdownMenuSubTrigger
-                id={FOLDER_RENAME_PAGE_ID}
-                testID={`sidebar-folder-rename-${folder.id}`}
-              >
-                {t("sidebar.folder.rename")}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuItem
-                leading={arrowUpLeading}
-                disabled={!canMoveUp}
-                onSelect={handleMoveUp}
-                testID={`sidebar-folder-move-up-${folder.id}`}
-              >
-                {t("sidebar.folder.moveUp")}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                leading={arrowDownLeading}
-                disabled={!canMoveDown}
-                onSelect={handleMoveDown}
-                testID={`sidebar-folder-move-down-${folder.id}`}
-              >
-                {t("sidebar.folder.moveDown")}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                leading={trashLeading}
-                onSelect={handleDelete}
-                testID={`sidebar-folder-delete-${folder.id}`}
-              >
-                {t("sidebar.folder.delete")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </View>
+        <Text style={styles.title} numberOfLines={1}>
+          {folder.name}
+        </Text>
       </Pressable>
+      <View
+        style={!actionsVisible && styles.hidden}
+        pointerEvents={actionsVisible ? "auto" : "none"}
+      >
+        <DropdownMenu compactMode="sheet">
+          <DropdownMenuTrigger
+            hitSlop={8}
+            style={kebabStyle}
+            accessibilityRole={isWeb ? undefined : "button"}
+            accessibilityLabel={t("sidebar.folder.menu")}
+            testID={`sidebar-folder-kebab-${folder.id}`}
+          >
+            {renderKebabIcon}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" width={220} pages={pages} sheetTitle={folder.name}>
+            <DropdownMenuSubTrigger
+              id={FOLDER_RENAME_PAGE_ID}
+              testID={`sidebar-folder-rename-${folder.id}`}
+            >
+              {t("sidebar.folder.rename")}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuItem
+              leading={arrowUpLeading}
+              disabled={!canMoveUp}
+              onSelect={handleMoveUp}
+              testID={`sidebar-folder-move-up-${folder.id}`}
+            >
+              {t("sidebar.folder.moveUp")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              leading={arrowDownLeading}
+              disabled={!canMoveDown}
+              onSelect={handleMoveDown}
+              testID={`sidebar-folder-move-down-${folder.id}`}
+            >
+              {t("sidebar.folder.moveDown")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              leading={trashLeading}
+              onSelect={handleDelete}
+              testID={`sidebar-folder-delete-${folder.id}`}
+            >
+              {t("sidebar.folder.delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </View>
     </View>
   );
 }
@@ -233,52 +242,52 @@ function SidebarFolderRenamePage({ folder }: { folder: SidebarFolder }): ReactEl
  * The `Folder` row on a project's menu and the pages behind it. Both the kebab dropdown and the
  * row's context menu render these, so the pages are defined once.
  */
-export function useProjectFolderMenuPages(projectViewKey: string): MenuPageDefinition[] {
+export function useProjectFolderMenuPages(project: SidebarFolderProject): MenuPageDefinition[] {
   const { t } = useTranslation();
   return useMemo(
     () => [
       {
         id: PROJECT_FOLDER_PAGE_ID,
         title: t("sidebar.folder.title"),
-        content: <ProjectFolderPickerPage projectViewKey={projectViewKey} />,
+        content: <ProjectFolderPickerPage project={project} />,
       },
       {
         id: PROJECT_FOLDER_CREATE_PAGE_ID,
         title: t("sidebar.folder.newFolder"),
         hoverIntent: false,
-        content: <ProjectFolderCreatePage projectViewKey={projectViewKey} />,
+        content: <ProjectFolderCreatePage project={project} />,
       },
     ],
-    [projectViewKey, t],
+    [project, t],
   );
 }
 
 export function ProjectFolderMenuTrigger({
-  projectViewKey,
+  project,
 }: {
-  projectViewKey: string;
+  project: SidebarFolderProject;
 }): ReactElement {
   const { t } = useTranslation();
   const folderName = useSidebarFoldersStore((state) => {
-    const folderId = state.folderIdByProjectViewKey[projectViewKey];
+    const folderId = resolveSidebarProjectFolderId(state, project.hosts);
     return state.folders.find((folder) => folder.id === folderId)?.name ?? null;
   });
   return (
     <MenuSubTrigger
       id={PROJECT_FOLDER_PAGE_ID}
       value={folderName ?? t("sidebar.folder.none")}
-      testID={`sidebar-project-menu-folder-${projectViewKey}`}
+      testID={`sidebar-project-menu-folder-${project.viewKey}`}
     >
       {t("sidebar.folder.title")}
     </MenuSubTrigger>
   );
 }
 
-function ProjectFolderPickerPage({ projectViewKey }: { projectViewKey: string }): ReactElement {
+function ProjectFolderPickerPage({ project }: { project: SidebarFolderProject }): ReactElement {
   const { t } = useTranslation();
   const folders = useSidebarFoldersStore((state) => state.folders);
-  const currentFolderId = useSidebarFoldersStore(
-    (state) => state.folderIdByProjectViewKey[projectViewKey] ?? null,
+  const currentFolderId = useSidebarFoldersStore((state) =>
+    resolveSidebarProjectFolderId(state, project.hosts),
   );
   const assignProject = useSidebarFoldersStore((state) => state.assignProject);
   return (
@@ -287,7 +296,7 @@ function ProjectFolderPickerPage({ projectViewKey }: { projectViewKey: string })
         label={t("sidebar.folder.none")}
         folderId={null}
         selected={currentFolderId === null}
-        projectViewKey={projectViewKey}
+        projectHosts={project.hosts}
         onAssign={assignProject}
       />
       {folders.map((folder) => (
@@ -297,7 +306,7 @@ function ProjectFolderPickerPage({ projectViewKey }: { projectViewKey: string })
           leading={folderLeading}
           folderId={folder.id}
           selected={currentFolderId === folder.id}
-          projectViewKey={projectViewKey}
+          projectHosts={project.hosts}
           onAssign={assignProject}
         />
       ))}
@@ -318,19 +327,19 @@ function FolderOptionRow({
   leading,
   folderId,
   selected,
-  projectViewKey,
+  projectHosts,
   onAssign,
 }: {
   label: string;
   leading?: ReactElement | null;
   folderId: string | null;
   selected: boolean;
-  projectViewKey: string;
-  onAssign: (projectViewKey: string, folderId: string | null) => void;
+  projectHosts: SidebarFolderProjectHosts;
+  onAssign: (hosts: SidebarFolderProjectHosts, folderId: string | null) => void;
 }): ReactElement {
   const select = useCallback(
-    () => onAssign(projectViewKey, folderId),
-    [folderId, onAssign, projectViewKey],
+    () => onAssign(projectHosts, folderId),
+    [folderId, onAssign, projectHosts],
   );
   return (
     <MenuItem
@@ -344,7 +353,7 @@ function FolderOptionRow({
   );
 }
 
-function ProjectFolderCreatePage({ projectViewKey }: { projectViewKey: string }): ReactElement {
+function ProjectFolderCreatePage({ project }: { project: SidebarFolderProject }): ReactElement {
   const { t } = useTranslation();
   const menu = useMenuContext("ProjectFolderCreatePage");
   const createFolder = useSidebarFoldersStore((state) => state.createFolder);
@@ -352,8 +361,8 @@ function ProjectFolderCreatePage({ projectViewKey }: { projectViewKey: string })
   const [name, setName] = useState("");
   const submit = useCallback(() => {
     const folderId = createFolder(name);
-    if (folderId) assignProject(projectViewKey, folderId);
-  }, [assignProject, createFolder, name, projectViewKey]);
+    if (folderId) assignProject(project.hosts, folderId);
+  }, [assignProject, createFolder, name, project.hosts]);
   const submitFromKeyboard = useCallback(() => {
     if (!normalizeSidebarFolderName(name)) return;
     menu.selectItem(submit, true);
@@ -382,14 +391,22 @@ function ProjectFolderCreatePage({ projectViewKey }: { projectViewKey: string })
 const styles = StyleSheet.create((theme) => ({
   row: {
     minHeight: 36,
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[2],
+    paddingRight: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
     marginBottom: theme.spacing[1],
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: theme.spacing[2],
+  },
+  pressTarget: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: "stretch",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[2],
+    paddingLeft: theme.spacing[2],
     userSelect: "none",
   },
   rowHovered: {
@@ -397,13 +414,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   rowPressed: {
     backgroundColor: theme.colors.surface2,
-  },
-  left: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    flex: 1,
-    minWidth: 0,
   },
   leading: {
     width: theme.iconSize.md,

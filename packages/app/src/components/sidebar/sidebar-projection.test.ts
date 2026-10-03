@@ -86,7 +86,7 @@ function projectionInput(options?: {
     collapsedProjectKeys: new Set<string>(),
     collapsedWorkspaceGroupKeys: new Set<string>(),
     folders: [] as { id: string; name: string }[],
-    folderIdByProjectViewKey: {} as Record<string, string>,
+    folderIdByProjectId: {} as Record<string, string>,
     collapsedFolderIds: [] as string[],
   };
 }
@@ -174,7 +174,7 @@ describe("buildSidebarProjection", () => {
         { id: "work", name: "Work" },
         { id: "empty", name: "Empty" },
       ],
-      folderIdByProjectViewKey: { "other-project": "work", project: "missing-folder" },
+      folderIdByProjectId: { "srv:other-project": "work", "srv:project": "missing-folder" },
     });
 
     const { folderGroups, rootProjects } = projection.projectFolderGroups;
@@ -188,11 +188,27 @@ describe("buildSidebarProjection", () => {
     ]);
   });
 
+  it("keeps a project in its folder when its view key changes", () => {
+    const input = twoProjectInput("project");
+    // Same host-local project id, new grouping key, as after a git remote change.
+    const renamed = { ...input.projects[1]!, viewKey: "remote-changed" };
+    const projection = buildSidebarProjection({
+      ...input,
+      projects: [input.projects[0]!, renamed],
+      folders: [{ id: "work", name: "Work" }],
+      folderIdByProjectId: { "srv:other-project": "work" },
+    });
+
+    expect(
+      projection.projectFolderGroups.folderGroups[0]?.projects.map((project) => project.viewKey),
+    ).toEqual(["remote-changed"]);
+  });
+
   it("skips shortcuts for projects inside a collapsed folder", () => {
     const projection = buildSidebarProjection({
       ...twoProjectInput("project"),
       folders: [{ id: "work", name: "Work" }],
-      folderIdByProjectViewKey: { "other-project": "work" },
+      folderIdByProjectId: { "srv:other-project": "work" },
       collapsedFolderIds: ["work"],
     });
 

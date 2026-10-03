@@ -71,9 +71,7 @@ export function SidebarModelProvider({
   const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const pinnedWorkspaceOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
   const folders = useSidebarFoldersStore((state) => state.folders);
-  const folderIdByProjectViewKey = useSidebarFoldersStore(
-    (state) => state.folderIdByProjectViewKey,
-  );
+  const folderIdByProjectId = useSidebarFoldersStore((state) => state.folderIdByProjectId);
   const collapsedFolderIds = useSidebarFoldersStore((state) => state.collapsedFolderIds);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
@@ -158,12 +156,12 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
       folders,
-      folderIdByProjectViewKey,
+      folderIdByProjectId,
       collapsedFolderIds,
     }),
     [
       folders,
-      folderIdByProjectViewKey,
+      folderIdByProjectId,
       collapsedFolderIds,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,

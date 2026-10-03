@@ -5,13 +5,14 @@ import {
   deleteSidebarFolder,
   moveSidebarFolder,
   renameSidebarFolder,
+  resolveSidebarProjectFolderId,
   toggleSidebarFolderCollapsed,
   type SidebarFoldersState,
 } from "./sidebar-folders-store";
 
 const empty: SidebarFoldersState = {
   folders: [],
-  folderIdByProjectViewKey: {},
+  folderIdByProjectId: {},
   collapsedFolderIds: [],
 };
 
@@ -37,23 +38,46 @@ describe("sidebar folders", () => {
     expect(renameSidebarFolder(state, "work", " ")).toBe(state);
   });
 
-  it("assigns a project only to a folder that exists, and null moves it to the root", () => {
-    let state = assignProjectToSidebarFolder(withFolders(), "srv:/repo", "work");
-    expect(state.folderIdByProjectViewKey).toEqual({ "srv:/repo": "work" });
-    state = assignProjectToSidebarFolder(state, "srv:/repo", "missing");
-    expect(state.folderIdByProjectViewKey).toEqual({});
-    state = assignProjectToSidebarFolder(state, "srv:/repo", "personal");
-    state = assignProjectToSidebarFolder(state, "srv:/repo", null);
-    expect(state.folderIdByProjectViewKey).toEqual({});
+  it("assigns every host of a project, only to a folder that exists; null moves it to the root", () => {
+    const hosts = [
+      { serverId: "a", projectId: "prj_1" },
+      { serverId: "b", projectId: "prj_2" },
+    ];
+    let state = assignProjectToSidebarFolder(withFolders(), hosts, "work");
+    expect(state.folderIdByProjectId).toEqual({ "a:prj_1": "work", "b:prj_2": "work" });
+    expect(resolveSidebarProjectFolderId(state, hosts)).toBe("work");
+    state = assignProjectToSidebarFolder(state, hosts, "missing");
+    expect(state.folderIdByProjectId).toEqual({});
+    state = assignProjectToSidebarFolder(state, hosts, "personal");
+    state = assignProjectToSidebarFolder(state, hosts, null);
+    expect(state.folderIdByProjectId).toEqual({});
+  });
+
+  it("finds the folder through any host, so a newly joined host does not move the project", () => {
+    const state = assignProjectToSidebarFolder(
+      withFolders(),
+      [{ serverId: "a", projectId: "prj_1" }],
+      "work",
+    );
+    expect(
+      resolveSidebarProjectFolderId(state, [
+        { serverId: "b", projectId: "prj_9" },
+        { serverId: "a", projectId: "prj_1" },
+      ]),
+    ).toBe("work");
   });
 
   it("deleting a folder returns its projects to the root", () => {
-    let state = assignProjectToSidebarFolder(withFolders(), "a", "work");
-    state = assignProjectToSidebarFolder(state, "b", "personal");
+    let state = assignProjectToSidebarFolder(
+      withFolders(),
+      [{ serverId: "s", projectId: "a" }],
+      "work",
+    );
+    state = assignProjectToSidebarFolder(state, [{ serverId: "s", projectId: "b" }], "personal");
     state = toggleSidebarFolderCollapsed(state, "work");
     state = deleteSidebarFolder(state, "work");
     expect(state.folders.map((folder) => folder.id)).toEqual(["personal"]);
-    expect(state.folderIdByProjectViewKey).toEqual({ b: "personal" });
+    expect(state.folderIdByProjectId).toEqual({ "s:b": "personal" });
     expect(state.collapsedFolderIds).toEqual([]);
   });
 

@@ -8,7 +8,7 @@ import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
-import type { SidebarFolder } from "@/stores/sidebar-folders-store";
+import { resolveSidebarProjectFolderId, type SidebarFolder } from "@/stores/sidebar-folders-store";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import {
   resolveSidebarProjectIconTargets,
@@ -61,7 +61,7 @@ export interface SidebarProjectionInput {
   collapsedProjectKeys: ReadonlySet<string>;
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
   folders: readonly SidebarFolder[];
-  folderIdByProjectViewKey: Readonly<Record<string, string>>;
+  folderIdByProjectId: Readonly<Record<string, string>>;
   collapsedFolderIds: readonly string[];
 }
 
@@ -72,7 +72,7 @@ export interface SidebarProjectionInput {
 export function groupSidebarProjectsByFolder(input: {
   projects: SidebarProjectEntry[];
   folders: readonly SidebarFolder[];
-  folderIdByProjectViewKey: Readonly<Record<string, string>>;
+  folderIdByProjectId: Readonly<Record<string, string>>;
   collapsedFolderIds: readonly string[];
 }): SidebarProjectFolderGroups {
   const collapsed = new Set(input.collapsedFolderIds);
@@ -81,7 +81,7 @@ export function groupSidebarProjectsByFolder(input: {
   );
   const rootProjects: SidebarProjectEntry[] = [];
   for (const project of input.projects) {
-    const folderId = input.folderIdByProjectViewKey[project.viewKey];
+    const folderId = resolveSidebarProjectFolderId(input, project.hosts);
     const bucket = folderId ? projectsByFolderId.get(folderId) : undefined;
     (bucket ?? rootProjects).push(project);
   }
@@ -112,7 +112,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   const projectFolderGroups = groupSidebarProjectsByFolder({
     projects: pinnedGroups.unpinnedProjects,
     folders: input.folders,
-    folderIdByProjectViewKey: input.folderIdByProjectViewKey,
+    folderIdByProjectId: input.folderIdByProjectId,
     collapsedFolderIds: input.collapsedFolderIds,
   });
 

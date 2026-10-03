@@ -409,6 +409,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
 }));
 
 function ProjectRowTrailingActions({
+  project,
   projectViewKey,
   displayName,
   worktreeTarget,
@@ -421,6 +422,7 @@ function ProjectRowTrailingActions({
   onRemoveProject,
   removeProjectStatus,
 }: {
+  project: SidebarProjectEntry;
   projectViewKey: string;
   displayName: string;
   worktreeTarget: SidebarProjectHostTarget | null;
@@ -451,6 +453,7 @@ function ProjectRowTrailingActions({
           pointerEvents={actionsVisible ? "auto" : "none"}
         >
           <ProjectKebabMenu
+            project={project}
             projectViewKey={projectViewKey}
             settingsTarget={settingsTarget}
             projectPath={projectPath}
@@ -479,12 +482,14 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }) {
 }
 
 function ProjectKebabMenu({
+  project,
   projectViewKey,
   settingsTarget,
   projectPath,
   onRemoveProject,
   removeProjectStatus,
 }: {
+  project: SidebarProjectEntry;
   projectViewKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
@@ -492,7 +497,7 @@ function ProjectKebabMenu({
   removeProjectStatus: "idle" | "pending" | "success";
 }) {
   const { t } = useTranslation();
-  const folderPages = useProjectFolderMenuPages(projectViewKey);
+  const folderPages = useProjectFolderMenuPages(project);
   return (
     <DropdownMenu compactMode="sheet">
       <DropdownMenuTrigger
@@ -512,6 +517,7 @@ function ProjectKebabMenu({
       >
         <ProjectMenuItems
           surface="dropdown"
+          project={project}
           projectViewKey={projectViewKey}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
@@ -540,6 +546,7 @@ function ProjectMenuItem({
 
 function ProjectMenuItems({
   surface,
+  project,
   projectViewKey,
   settingsTarget,
   projectPath,
@@ -547,6 +554,7 @@ function ProjectMenuItems({
   removeProjectStatus,
 }: {
   surface: ProjectMenuSurface;
+  project: SidebarProjectEntry;
   projectViewKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
@@ -598,7 +606,7 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
-      <ProjectFolderMenuTrigger projectViewKey={projectViewKey} />
+      <ProjectFolderMenuTrigger project={project} />
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -890,7 +898,7 @@ function ProjectHeaderRow({
   const localDaemonServerId = useLocalDaemonServerId();
   const projectPath = resolveSidebarProjectLocalPath(project, localDaemonServerId);
   const settingsTarget = project.hosts[0] ?? null;
-  const folderPages = useProjectFolderMenuPages(project.viewKey);
+  const folderPages = useProjectFolderMenuPages(project);
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!worktreeTarget) {
       return;
@@ -976,6 +984,7 @@ function ProjectHeaderRow({
         </View>
       </View>
       <ProjectRowTrailingActions
+        project={project}
         projectViewKey={project.viewKey}
         displayName={displayName}
         worktreeTarget={worktreeTarget}
@@ -1052,6 +1061,7 @@ function ProjectHeaderRow({
       >
         <ProjectMenuItems
           surface="context"
+          project={project}
           projectViewKey={project.viewKey}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
@@ -2415,38 +2425,39 @@ function ProjectModeList({
 
   const { folderGroups, rootProjects } = projectFolderGroups;
   // Each folder and the root get their own draggable list, so a drag reorders projects within
-  // one group. Moving a project between groups goes through its menu's `Folder` row.
-  const projectBody =
-    projects.length === 0 ? (
-      <SidebarProjectEmptyState onAddProject={onAddProject} onImportSession={onImportSession} />
-    ) : (
-      <>
-        {folderGroups.map((group, index) => (
-          <View key={group.folder.id} testID={`sidebar-folder-${group.folder.id}`}>
-            <SidebarFolderHeader
-              folder={group.folder}
-              collapsed={group.collapsed}
-              canMoveUp={index > 0}
-              canMoveDown={index < folderGroups.length - 1}
+  // one group. Moving a project between groups goes through its menu's `Folder` row. Folder
+  // headers render even with no projects left: they are the only place to rename or delete one.
+  const projectBody = (
+    <>
+      {folderGroups.map((group, index) => (
+        <View key={group.folder.id} testID={`sidebar-folder-${group.folder.id}`}>
+          <SidebarFolderHeader
+            folder={group.folder}
+            collapsed={group.collapsed}
+            canMoveUp={index > 0}
+            canMoveDown={index < folderGroups.length - 1}
+          />
+          {group.collapsed || group.projects.length === 0 ? null : (
+            <DraggableList
+              testID={`sidebar-folder-project-list-${group.folder.id}`}
+              data={group.projects}
+              keyExtractor={projectViewKeyExtractor}
+              renderItem={renderProject}
+              onDragEnd={handleProjectDragEnd}
+              extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+              scrollEnabled={false}
+              useDragHandle
+              nestable={platformIsNative}
+              simultaneousGestureRef={parentGestureRef}
+              gestureHostPresented={dragGestureHostActive}
+              containerStyle={styles.folderProjectListContainer}
             />
-            {group.collapsed || group.projects.length === 0 ? null : (
-              <DraggableList
-                testID={`sidebar-folder-project-list-${group.folder.id}`}
-                data={group.projects}
-                keyExtractor={projectViewKeyExtractor}
-                renderItem={renderProject}
-                onDragEnd={handleProjectDragEnd}
-                extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-                scrollEnabled={false}
-                useDragHandle
-                nestable={platformIsNative}
-                simultaneousGestureRef={parentGestureRef}
-                gestureHostPresented={dragGestureHostActive}
-                containerStyle={styles.folderProjectListContainer}
-              />
-            )}
-          </View>
-        ))}
+          )}
+        </View>
+      ))}
+      {projects.length === 0 ? (
+        <SidebarProjectEmptyState onAddProject={onAddProject} onImportSession={onImportSession} />
+      ) : (
         <DraggableList
           testID="sidebar-project-list"
           data={rootProjects}
@@ -2461,8 +2472,9 @@ function ProjectModeList({
           gestureHostPresented={dragGestureHostActive}
           containerStyle={styles.projectListContainer}
         />
-      </>
-    );
+      )}
+    </>
+  );
 
   const content = (
     <>
