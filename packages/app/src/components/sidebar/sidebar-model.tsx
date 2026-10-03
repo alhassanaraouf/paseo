@@ -71,7 +71,7 @@ export function SidebarModelProvider({
   const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const pinnedWorkspaceOrder = useSidebarOrderStore((state) => state.pinnedWorkspaceOrder);
   const folders = useSidebarFoldersStore((state) => state.folders);
-  const folderIdByProjectRef = useSidebarFoldersStore((state) => state.folderIdByProjectRef);
+  const projectAssignments = useSidebarFoldersStore((state) => state.projectAssignments);
   const collapsedFolderIds = useSidebarFoldersStore((state) => state.collapsedFolderIds);
   const reconcileFolderProjects = useSidebarFoldersStore((state) => state.reconcileProjects);
   // Every project, before filters: an assignment only ever gains refs here, so a project that is
@@ -79,7 +79,7 @@ export function SidebarModelProvider({
   // reconcile is a no-op once every ref is recorded.
   useEffect(() => {
     reconcileFolderProjects(list.projects);
-  }, [folderIdByProjectRef, folders, list.projects, reconcileFolderProjects]);
+  }, [projectAssignments, folders, list.projects, reconcileFolderProjects]);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
   );
@@ -163,12 +163,12 @@ export function SidebarModelProvider({
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,
       folders,
-      folderIdByProjectRef,
+      projectAssignments,
       collapsedFolderIds,
     }),
     [
       folders,
-      folderIdByProjectRef,
+      projectAssignments,
       collapsedFolderIds,
       collapsedProjectKeys,
       collapsedWorkspaceGroupKeys,

@@ -8,7 +8,11 @@ import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
-import { resolveSidebarProjectFolderId, type SidebarFolder } from "@/stores/sidebar-folders-store";
+import {
+  resolveSidebarProjectFolderId,
+  type SidebarFolder,
+  type SidebarFolderAssignment,
+} from "@/stores/sidebar-folders-store";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import {
   resolveSidebarProjectIconTargets,
@@ -61,7 +65,7 @@ export interface SidebarProjectionInput {
   collapsedProjectKeys: ReadonlySet<string>;
   collapsedWorkspaceGroupKeys: ReadonlySet<string>;
   folders: readonly SidebarFolder[];
-  folderIdByProjectRef: Readonly<Record<string, string>>;
+  projectAssignments: readonly SidebarFolderAssignment[];
   collapsedFolderIds: readonly string[];
 }
 
@@ -72,7 +76,7 @@ export interface SidebarProjectionInput {
 export function groupSidebarProjectsByFolder(input: {
   projects: SidebarProjectEntry[];
   folders: readonly SidebarFolder[];
-  folderIdByProjectRef: Readonly<Record<string, string>>;
+  projectAssignments: readonly SidebarFolderAssignment[];
   collapsedFolderIds: readonly string[];
 }): SidebarProjectFolderGroups {
   const collapsed = new Set(input.collapsedFolderIds);
@@ -112,7 +116,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   const projectFolderGroups = groupSidebarProjectsByFolder({
     projects: pinnedGroups.unpinnedProjects,
     folders: input.folders,
-    folderIdByProjectRef: input.folderIdByProjectRef,
+    projectAssignments: input.projectAssignments,
     collapsedFolderIds: input.collapsedFolderIds,
   });
 

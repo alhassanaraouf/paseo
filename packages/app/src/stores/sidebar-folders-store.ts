@@ -23,21 +23,30 @@ export interface SidebarFoldersState {
   /** Render order. */
   folders: SidebarFolder[];
   /**
-   * Project ref → folder id. A project with no matching ref sits at the root.
+   * One record per foldered project, holding every ref that project has ever had. A project
+   * matching no record sits at the root.
    *
-   * A project has several refs and the assignment is stored under all of them, because neither
-   * identity survives everything on its own: `serverId:projectId` is stable per host but is lost
-   * when that host goes away, and `view:<viewKey>` spans hosts but follows `projectKey`, which
-   * changes with the git remote. `reconcileSidebarFolderAssignments` copies an assignment onto any
-   * ref a project gains, so it outlives either kind of change.
+   * A project has several refs because neither identity survives everything on its own:
+   * `serverId:projectId` is stable per host but is lost when that host goes away, and
+   * `view:<viewKey>` spans hosts but follows `projectKey`, which changes with the git remote.
+   * `reconcileSidebarFolderAssignments` adds any ref a project gains to its record. Keeping a
+   * project's refs in one record is what lets a move replace all of them at once, so a ref from
+   * a host or remote the project left cannot pull it back into a folder it was moved out of.
    */
-  folderIdByProjectRef: Record<string, string>;
+  projectAssignments: SidebarFolderAssignment[];
   collapsedFolderIds: string[];
+}
+
+export interface SidebarFolderAssignment {
+  folderId: string;
+  refs: string[];
 }
 
 const SidebarFoldersPersistedStateSchema = z.strictObject({
   folders: z.array(z.strictObject({ id: z.string(), name: z.string() })).optional(),
-  folderIdByProjectRef: z.record(z.string(), z.string()).optional(),
+  projectAssignments: z
+    .array(z.strictObject({ folderId: z.string(), refs: z.array(z.string()) }))
+    .optional(),
   collapsedFolderIds: z.array(z.string()).optional(),
 });
 
@@ -48,19 +57,24 @@ function projectRefs(project: SidebarFolderProject): string[] {
   ];
 }
 
-/** The folder a project sits in: the first of its refs assigned to a folder that still exists. */
+function sharesRef(assignment: SidebarFolderAssignment, refs: readonly string[]): boolean {
+  return refs.some((ref) => assignment.refs.includes(ref));
+}
+
+/** The folder a project sits in: the first record sharing a ref, if its folder still exists. */
 export function resolveSidebarProjectFolderId(
   state: {
     folders: readonly SidebarFolder[];
-    folderIdByProjectRef: Readonly<Record<string, string>>;
+    projectAssignments: readonly SidebarFolderAssignment[];
   },
   project: SidebarFolderProject,
 ): string | null {
-  for (const ref of projectRefs(project)) {
-    const folderId = state.folderIdByProjectRef[ref];
-    if (folderId && state.folders.some((folder) => folder.id === folderId)) return folderId;
-  }
-  return null;
+  const refs = projectRefs(project);
+  const assignment = state.projectAssignments.find((candidate) => sharesRef(candidate, refs));
+  if (!assignment) return null;
+  return state.folders.some((folder) => folder.id === assignment.folderId)
+    ? assignment.folderId
+    : null;
 }
 
 export function normalizeSidebarFolderName(name: string): string {
@@ -98,13 +112,11 @@ export function deleteSidebarFolder(
   state: SidebarFoldersState,
   folderId: string,
 ): SidebarFoldersState {
-  const folderIdByProjectRef: Record<string, string> = {};
-  for (const [ref, id] of Object.entries(state.folderIdByProjectRef)) {
-    if (id !== folderId) folderIdByProjectRef[ref] = id;
-  }
   return {
     folders: state.folders.filter((folder) => folder.id !== folderId),
-    folderIdByProjectRef,
+    projectAssignments: state.projectAssignments.filter(
+      (assignment) => assignment.folderId !== folderId,
+    ),
     collapsedFolderIds: state.collapsedFolderIds.filter((id) => id !== folderId),
   };
 }
@@ -122,46 +134,49 @@ export function moveSidebarFolder(
   return { ...state, folders };
 }
 
-// ponytail: refs from a host the project has since left are not cleared on reassign; if that
-// host returns with an old ref, the project can land back in the old folder. Track refs per
-// project if that shows up in practice.
+/**
+ * Replaces every record that shares a ref with the project — including refs from hosts or
+ * remotes it has since left — with one record under `folderId`, or with none for the root.
+ */
 export function assignProjectToSidebarFolder(
   state: SidebarFoldersState,
   project: SidebarFolderProject,
   folderId: string | null,
 ): SidebarFoldersState {
-  const assign = folderId && state.folders.some((folder) => folder.id === folderId);
-  const folderIdByProjectRef = { ...state.folderIdByProjectRef };
-  for (const ref of projectRefs(project)) {
-    if (assign) {
-      folderIdByProjectRef[ref] = folderId;
-    } else {
-      delete folderIdByProjectRef[ref];
-    }
+  const refs = projectRefs(project);
+  const matched = state.projectAssignments.filter((assignment) => sharesRef(assignment, refs));
+  const projectAssignments = state.projectAssignments.filter(
+    (assignment) => !matched.includes(assignment),
+  );
+  if (folderId && state.folders.some((folder) => folder.id === folderId)) {
+    const allRefs = new Set([...matched.flatMap((assignment) => assignment.refs), ...refs]);
+    projectAssignments.push({ folderId, refs: [...allRefs] });
   }
-  return { ...state, folderIdByProjectRef };
+  return { ...state, projectAssignments };
 }
 
 /**
- * Copies each foldered project's assignment onto any ref it does not carry yet — a host it just
- * joined, or a `viewKey` it just took. Returns `state` untouched when nothing is missing, so an
- * effect calling this on every project change settles after one write.
+ * Adds any ref a foldered project has gained — a host it just joined, a `viewKey` it just took —
+ * to its record. Returns `state` untouched when nothing is missing, so an effect calling this on
+ * every project change settles after one write.
  */
 export function reconcileSidebarFolderAssignments(
   state: SidebarFoldersState,
   projects: readonly SidebarFolderProject[],
 ): SidebarFoldersState {
-  let folderIdByProjectRef: Record<string, string> | null = null;
+  let projectAssignments: SidebarFolderAssignment[] | null = null;
   for (const project of projects) {
-    const folderId = resolveSidebarProjectFolderId(state, project);
-    if (!folderId) continue;
-    for (const ref of projectRefs(project)) {
-      if (state.folderIdByProjectRef[ref] === folderId) continue;
-      folderIdByProjectRef ??= { ...state.folderIdByProjectRef };
-      folderIdByProjectRef[ref] = folderId;
-    }
+    const refs = projectRefs(project);
+    const current = projectAssignments ?? state.projectAssignments;
+    const index = current.findIndex((assignment) => sharesRef(assignment, refs));
+    if (index < 0) continue;
+    const assignment = current[index]!;
+    const missing = refs.filter((ref) => !assignment.refs.includes(ref));
+    if (missing.length === 0) continue;
+    projectAssignments ??= [...state.projectAssignments];
+    projectAssignments[index] = { ...assignment, refs: [...assignment.refs, ...missing] };
   }
-  return folderIdByProjectRef ? { ...state, folderIdByProjectRef } : state;
+  return projectAssignments ? { ...state, projectAssignments } : state;
 }
 
 export function toggleSidebarFolderCollapsed(
@@ -189,7 +204,7 @@ export const useSidebarFoldersStore = create<SidebarFoldersStore>()(
   persist(
     (set) => ({
       folders: [],
-      folderIdByProjectRef: {},
+      projectAssignments: [],
       collapsedFolderIds: [],
       createFolder: (name) => {
         if (!normalizeSidebarFolderName(name)) return null;
@@ -212,7 +227,7 @@ export const useSidebarFoldersStore = create<SidebarFoldersStore>()(
       storage: createValidatedPersistStorage(AsyncStorage, SidebarFoldersPersistedStateSchema),
       partialize: (state) => ({
         folders: state.folders,
-        folderIdByProjectRef: state.folderIdByProjectRef,
+        projectAssignments: state.projectAssignments,
         collapsedFolderIds: state.collapsedFolderIds,
       }),
     },
