@@ -306,6 +306,10 @@ describe("releasesUpTo", () => {
     expect(versionsUpTo("0.11.0-beta.9")).not.toContain("0.11.0-beta.10");
   });
 
+  it("leaves only non-version headings for an install older than every release", () => {
+    expect(versionsUpTo("0.1.0")).toEqual(["Unreleased"]);
+  });
+
   it("shows everything when the installed version is unknown", () => {
     expect(versionsUpTo(null)).toHaveLength(releases.length);
     expect(versionsUpTo("dev")).toHaveLength(releases.length);

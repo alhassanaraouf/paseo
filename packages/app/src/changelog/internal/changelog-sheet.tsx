@@ -83,7 +83,13 @@ export function ChangelogSheet({ visible, onClose }: ChangelogSheetProps) {
       desktopHeight="85%"
       testID="changelog-sheet"
     >
-      <ChangelogBody state={state} shownReleases={count} onShowMore={showMore} onRetry={reload} />
+      <ChangelogBody
+        state={state}
+        shownReleases={count}
+        onShowMore={showMore}
+        onRetry={reload}
+        onOpenWebsite={handleOpenWebsite}
+      />
     </AdaptiveModalSheet>
   );
 }
@@ -95,9 +101,16 @@ interface ChangelogBodyProps {
   shownReleases: number;
   onShowMore: () => void;
   onRetry: () => void;
+  onOpenWebsite: () => void;
 }
 
-function ChangelogBody({ state, shownReleases, onShowMore, onRetry }: ChangelogBodyProps) {
+function ChangelogBody({
+  state,
+  shownReleases,
+  onShowMore,
+  onRetry,
+  onOpenWebsite,
+}: ChangelogBodyProps) {
   const { t } = useTranslation();
   const appVersion = useMemo(() => resolveAppVersion()?.replace(/^v/i, "") ?? null, []);
 
@@ -128,6 +141,28 @@ function ChangelogBody({ state, shownReleases, onShowMore, onRetry }: ChangelogB
   }
 
   const releases = releasesUpTo(state.releases, appVersion);
+  if (releases.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <Alert
+          size="md"
+          title={t("changelog.empty.title")}
+          description={t("changelog.empty.description")}
+          testID="changelog-empty"
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={onOpenWebsite}
+            testID="changelog-empty-open-website"
+          >
+            {t("changelog.openWebsite")}
+          </Button>
+        </Alert>
+      </View>
+    );
+  }
+
   const visibleReleases = releases.slice(0, shownReleases);
 
   return (
